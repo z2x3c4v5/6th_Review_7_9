@@ -5,7 +5,7 @@ import React, { useState, useEffect, useRef } from 'react';
 // -----------------------------------------------------------------
 //  - 7~9단원 표현을 넣어두었습니다. 한 단원에 여러 문장을 넣어두면,
 //    게임을 시작할 때마다 필요한 개수만큼 "무작위로" 뽑아 보드에 배치합니다.
-//  - image: img('파일명') → public/images 의 그림 (Canva로 제작)
+//  - image: img('파일명') → public/images 의 그림
 //    GitHub Pages(하위 경로)에서도 깨지지 않도록 BASE_URL 기준으로 경로를 만듭니다.
 //  - emoji: 그림이 없거나 불러오지 못할 때 대신 보여줄 이모지입니다.
 //  - question / answer: 학생이 말할 영어 질문과 대답입니다.
@@ -16,32 +16,30 @@ const img = (file) => `${import.meta.env.BASE_URL}images/${file}`;
 const UNIT_POOLS = {
   // 7단원: 초대하기 / 수락·거절하기
   '7단원': [
-    { emoji: '📚', image: img('u7_01_book_festival.png'), question: 'Can you come to the book festival?', answer: 'Of course.', ko: '책 축제에 올 수 있니? / 물론이지.' },
-    { emoji: '🎬', image: img('u7_02_movie_festival.png'), question: 'Can you come to the movie festival?', answer: "Sorry, but I can't.", ko: '영화 축제에 올 수 있니? / 미안하지만, 갈 수 없어.' },
-    { emoji: '🎂', image: img('u7_03_birthday_party.png'), question: 'Can you come to my birthday party?', answer: 'Of course.', ko: '내 생일 파티에 올 수 있니? / 물론이지.' },
-    { emoji: '🏠', image: img('u7_04_my_house_at_four.png'), question: 'Come to my house at four.', answer: 'Okay, I will.', ko: '4시에 우리 집으로 와. / 응, 그럴게.' },
-    { emoji: '🥋', image: img('u7_05_taekwondo_show.png'), question: 'Can you come to the taekwondo show?', answer: 'Of course.', ko: '태권도 공연에 올 수 있니? / 물론이지.' },
-    { emoji: '🏫', image: img('u7_06_school_at_five.png'), question: 'Come to school at five.', answer: 'Okay, I will.', ko: '5시에 학교로 와. / 응, 그럴게.' },
-    { emoji: '⚾', image: img('u7_07_laser_show.png'), question: 'Can you come to the laser show?', answer: "Sorry, but I can't. I have a baseball game.", ko: '레이저 쇼에 올 수 있니? / 미안하지만, 갈 수 없어. 야구 경기가 있어.' },
-    { emoji: '🍳', image: img('u7_08_cooking_class_party.png'), question: 'When is the cooking class party?', answer: "It's on September 15th.", ko: '요리 교실 파티는 언제니? / 9월 15일이야.' },
+    { emoji: '📚', image: img('u7_01_book_festival_of_course.png'), question: 'Can you come to the book festival?', answer: 'Of course.', ko: '책 축제에 올 수 있니? / 물론이지.' },
+    { emoji: '🎬', image: img('u7_02_movie_festival_sorry.png'), question: 'Can you come to the movie festival?', answer: "Sorry, but I can't.", ko: '영화 축제에 올 수 있니? / 미안하지만, 갈 수 없어.' },
+    { emoji: '🎂', image: img('u7_03_birthday_party_of_course.png'), question: 'Can you come to my birthday party?', answer: 'Of course.', ko: '내 생일 파티에 올 수 있니? / 물론이지.' },
+    { emoji: '🥋', image: img('u7_04_taekwondo_show_sorry.png'), question: 'Can you come to the taekwondo show?', answer: "Sorry, but I can't.", ko: '태권도 공연에 올 수 있니? / 미안하지만, 갈 수 없어.' },
+    { emoji: '🍳', image: img('u7_05_cooking_class_party_of_course.png'), question: 'Can you come to the cooking class party?', answer: 'Of course.', ko: '요리 교실 파티에 올 수 있니? / 물론이지.' },
+    { emoji: '⚾', image: img('u7_06_laser_show_baseball_game.png'), question: 'Can you come to the laser show?', answer: "Sorry, but I can't. I have a baseball game.", ko: '레이저 쇼에 올 수 있니? / 미안하지만, 갈 수 없어. 야구 경기가 있어.' },
   ],
   // 8단원: 비교하기 (비교급)
   '8단원': [
-    { emoji: '📏', image: img('u8_01_taller.png'), question: 'Who is taller?', answer: "I'm taller than you.", ko: '누가 더 키가 크니? / 내가 너보다 키가 더 커.' },
-    { emoji: '👧', image: img('u8_02_amy_older.png'), question: 'Who is older, Amy or Sally?', answer: 'Amy is older than Sally.', ko: 'Amy와 Sally 중 누가 나이가 더 많니? / Amy가 Sally보다 나이가 더 많아.' },
-    { emoji: '💪', image: img('u8_03_tom_stronger.png'), question: 'Who is stronger, Tom or Miso?', answer: 'Tom is stronger than Miso.', ko: 'Tom과 미소 중 누가 더 힘이 세니? / Tom이 미소보다 힘이 더 세.' },
-    { emoji: '🚆', image: img('u8_04_train_faster.png'), question: 'The car is faster than the train.', answer: "That's not right. The train is faster than the car.", ko: '자동차가 기차보다 더 빨라. / 그건 맞지 않아. 기차가 자동차보다 더 빨라.' },
-    { emoji: '🏀', image: img('u8_05_basketball_bigger.png'), question: 'The baseball is bigger than the basketball.', answer: "That's not right. The basketball is bigger than the baseball.", ko: '야구공이 농구공보다 더 커. / 그건 맞지 않아. 농구공이 야구공보다 더 커.' },
-    { emoji: '🍉', image: img('u8_06_watermelon_heavier.png'), question: 'The apple is heavier than the watermelon.', answer: "That's not right. The watermelon is heavier than the apple.", ko: '사과가 수박보다 더 무거워. / 그건 맞지 않아. 수박이 사과보다 더 무거워.' },
+    { emoji: '📏', image: img('u8_01_i_m_taller_than_you.png'), question: 'Who is taller?', answer: "I'm taller than you.", ko: '누가 더 키가 크니? / 내가 너보다 키가 더 커.' },
+    { emoji: '👧', image: img('u8_02_amy_is_older_than_sally.png'), question: 'Who is older, Amy or Sally?', answer: 'Amy is older than Sally.', ko: 'Amy와 Sally 중 누가 나이가 더 많니? / Amy가 Sally보다 나이가 더 많아.' },
+    { emoji: '💪', image: img('u8_03_tom_is_stronger_than_miso.png'), question: 'Who is stronger, Tom or Miso?', answer: 'Tom is stronger than Miso.', ko: 'Tom과 미소 중 누가 더 힘이 세니? / Tom이 미소보다 힘이 더 세.' },
+    { emoji: '🚆', image: img('u8_04_train_is_faster_than_the_car.png'), question: 'The car is faster than the train.', answer: "That's not right. The train is faster than the car.", ko: '자동차가 기차보다 더 빨라. / 그건 맞지 않아. 기차가 자동차보다 더 빨라.' },
+    { emoji: '🏀', image: img('u8_05_basketball_is_bigger_than_the_baseball.png'), question: 'The baseball is bigger than the basketball.', answer: "That's not right. The basketball is bigger than the baseball.", ko: '야구공이 농구공보다 더 커. / 그건 맞지 않아. 농구공이 야구공보다 더 커.' },
+    { emoji: '🍉', image: img('u8_06_watermelon_is_heavier_than_the_apple.png'), question: 'The apple is heavier than the watermelon.', answer: "That's not right. The watermelon is heavier than the apple.", ko: '사과가 수박보다 더 무거워. / 그건 맞지 않아. 수박이 사과보다 더 무거워.' },
   ],
   // 9단원: 계획 묻고 답하기 (be going to)
   '9단원': [
-    { emoji: '🏀', image: img('u9_01_watch_basketball.png'), question: 'What are you going to do this weekend?', answer: "I'm going to watch a basketball game.", ko: '이번 주말에 뭐 할 거니? / 농구 경기를 볼 거야.' },
-    { emoji: '⛺', image: img('u9_02_go_camping.png'), question: 'What are you going to do tomorrow?', answer: "I'm going to go camping.", ko: '내일 뭐 할 거니? / 캠핑하러 갈 거야.' },
-    { emoji: '🧹', image: img('u9_03_clean_my_room.png'), question: 'What are you going to do this weekend?', answer: "I'm going to clean my room.", ko: '이번 주말에 뭐 할 거니? / 내 방을 청소할 거야.' },
-    { emoji: '👵', image: img('u9_04_visit_grandparents.png'), question: 'What are you going to do this weekend?', answer: "I'm going to visit my grandparents.", ko: '이번 주말에 뭐 할 거니? / 조부모님 댁을 방문할 거야.' },
-    { emoji: '➗', image: img('u9_05_study_math.png'), question: 'What are you going to do tomorrow?', answer: "I'm going to study math.", ko: '내일 뭐 할 거니? / 수학을 공부할 거야.' },
-    { emoji: '🤝', image: img('u9_06_can_you_join.png'), question: "I'm going to watch a basketball game tomorrow. Can you join?", answer: "That's a good idea.", ko: '나 내일 농구 경기 볼 거야. 같이 할래? / 좋은 생각이야.' },
+    { emoji: '🏠', image: img('u9_01_i_m_going_to_stay_home.png'), question: 'What are you going to do tomorrow?', answer: "I'm going to stay home.", ko: '내일 뭐 할 거니? / 집에 있을 거야.' },
+    { emoji: '🏀', image: img('u9_02_i_m_going_to_watch_a_basketball_game.png'), question: 'What are you going to do this weekend?', answer: "I'm going to watch a basketball game.", ko: '이번 주말에 뭐 할 거니? / 농구 경기를 볼 거야.' },
+    { emoji: '⛺', image: img('u9_03_i_m_going_to_go_camping.png'), question: 'What are you going to do tomorrow?', answer: "I'm going to go camping.", ko: '내일 뭐 할 거니? / 캠핑하러 갈 거야.' },
+    { emoji: '🧹', image: img('u9_04_i_m_going_to_clean_my_room.png'), question: 'What are you going to do this weekend?', answer: "I'm going to clean my room.", ko: '이번 주말에 뭐 할 거니? / 내 방을 청소할 거야.' },
+    { emoji: '➗', image: img('u9_05_i_m_going_to_study_math.png'), question: 'What are you going to do tomorrow?', answer: "I'm going to study math.", ko: '내일 뭐 할 거니? / 수학을 공부할 거야.' },
+    { emoji: '👵', image: img('u9_06_i_m_going_to_visit_my_grandparents.png'), question: 'What are you going to do this weekend?', answer: "I'm going to visit my grandparents.", ko: '이번 주말에 뭐 할 거니? / 조부모님 댁을 방문할 거야.' },
   ],
 };
 
@@ -339,6 +337,7 @@ const WORD_MEANING = {
   "that's": '그것은 ~이다', thats: '그것은 ~이다', car: '자동차', train: '기차',
   basketball: '농구(공)', apple: '사과',
   // 9단원 (계획 말하기)
+  stay: '머무르다', home: '집 (stay home: 집에 있다)',
   going: '~할 예정인 (be going to)', weekend: '주말', this: '이번/이것',
   watch: '보다/시청하다', camping: '캠핑', clean: '청소하다', room: '방', visit: '방문하다',
   grandparents: '조부모님', study: '공부하다', join: '함께하다/참여하다', good: '좋은', idea: '생각',
