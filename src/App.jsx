@@ -88,6 +88,76 @@ const UNIT_TOGGLE_ON = {
   '9단원': 'bg-emerald-500 border-emerald-600 text-white',
 };
 
+// 계절 배경 테마 (가을 / 겨울). Tailwind가 클래스를 찾을 수 있도록 전체 문자열로 적어 둔다.
+const THEMES = {
+  autumn: {
+    label: '🍂 가을',
+    page: 'bg-gradient-to-b from-amber-200 via-orange-300 to-rose-400',
+    header: 'bg-gradient-to-r from-orange-500 via-amber-500 to-red-500',
+    titleShadow: 'drop-shadow-[0_2px_0_rgba(154,52,18,0.9)]',
+    titleIcons: ['🍁', '🍂'],
+    headerDeco: ['🍂', '🌰'],
+    floats: ['🍁', '🌰', '🍎', '🍄', '🍂', '🎃'],
+    falling: ['🍂', '🍁', '🍂', '🍁'],
+    corners: ['🍁', '🌰', '🍄', '🎃'],
+    board: 'border-[#7c2d12] bg-gradient-to-br from-amber-50 to-orange-100',
+    badge: 'bg-[#7c2d12]',
+    arrow: 'text-amber-800',
+    panel: 'border-orange-400',
+    panelText: 'text-orange-700',
+    guide: '🍁 이렇게 놀며 공부해요!',
+    startBtn: '시작할게요! 🍂',
+  },
+  winter: {
+    label: '❄️ 겨울',
+    page: 'bg-gradient-to-b from-slate-100 via-sky-200 to-indigo-400',
+    header: 'bg-gradient-to-r from-sky-600 via-indigo-500 to-blue-700',
+    titleShadow: 'drop-shadow-[0_2px_0_rgba(30,58,138,0.9)]',
+    titleIcons: ['⛄', '❄️'],
+    headerDeco: ['❄️', '🎄'],
+    floats: ['⛄', '🎄', '🧣', '❄️', '☃️', '🧤'],
+    falling: ['❄️', '❅', '❄️', '❆'],
+    corners: ['❄️', '⛄', '🎄', '🧤'],
+    board: 'border-[#1e3a8a] bg-gradient-to-br from-slate-50 to-sky-100',
+    badge: 'bg-[#1e3a8a]',
+    arrow: 'text-indigo-700',
+    panel: 'border-sky-400',
+    panelText: 'text-sky-700',
+    guide: '⛄ 이렇게 놀며 공부해요!',
+    startBtn: '시작할게요! ⛄',
+  },
+};
+const THEME_KEY = 'boardgame_theme';
+const loadTheme = () => {
+  try {
+    const t = localStorage.getItem(THEME_KEY);
+    if (t && THEMES[t]) return t;
+  } catch (e) { /* 무시 */ }
+  const m = new Date().getMonth(); // 12~2월은 겨울, 그 외는 가을
+  return m === 11 || m <= 1 ? 'winter' : 'autumn';
+};
+// 떨어지는 낙엽/눈송이 위치(고정값: 렌더마다 바뀌지 않도록)
+const FALLING = Array.from({ length: 14 }, (_, i) => ({
+  left: (i * 37 + 11) % 100,
+  delay: (i * 1.7) % 9,
+  dur: 9 + ((i * 3) % 7),
+  size: 18 + ((i * 7) % 16),
+}));
+
+// 그림만 보고 말하기 힌트: 단어마다 첫 글자만 남기고 가림 (I'm going → I'm g____)
+const maskHint = (text) =>
+  text
+    .split(/(\s+)/)
+    .map((w) => {
+      if (/^\s+$/.test(w)) return w;
+      let seen = false;
+      return w.replace(/[A-Za-z0-9]/g, (ch) => {
+        if (!seen) { seen = true; return ch; }
+        return '_';
+      });
+    })
+    .join('');
+
 const shuffle = (arr) => {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -421,6 +491,19 @@ export default function App() {
   const [names, setNames] = useState({ player: '', ai: '' });
   const [gameStars, setGameStars] = useState({ player: 0, ai: 0 }); // 친구 모드: 이번 판에서 모은 별
   const [showFriendAnswer, setShowFriendAnswer] = useState(false); // 친구 판정용 정답 보기
+
+  // 그림만 보고 말하기 모드: 문장을 숨기고 그림만 보고 말한 뒤 정답 공개
+  const [pictureOnly, setPictureOnly] = useState(false);
+  const [showHint, setShowHint] = useState(false); // 말하기 창 힌트(첫 글자) 보기
+  const [previewShown, setPreviewShown] = useState(false); // 그림 칸 미리보기에서 문장 보기
+
+  // 계절 배경
+  const [themeKey, setThemeKey] = useState(loadTheme);
+  const T = THEMES[themeKey];
+  const changeTheme = (k) => {
+    setThemeKey(k);
+    try { localStorage.setItem(THEME_KEY, k); } catch (e) { /* 무시 */ }
+  };
   const isFriend = opponent === 'friend';
   const other = (who) => (who === 'player' ? 'ai' : 'player');
   const nameOf = (who) => {
@@ -814,6 +897,7 @@ export default function App() {
     setFeedback('');
     setAttemptCount(0);
     setShowFriendAnswer(false);
+    setShowHint(false);
 
     setCurrentTask({
       cell,
@@ -826,7 +910,8 @@ export default function App() {
     // qna 모드는 학생이 스스로 질문/대답을 만들어야 하므로 자동 음성을 재생하지 않음.
     // say:'q'(학생이 question을 말해야 하는 표현)도 정답을 미리 들려주지 않도록 자동 음성 생략.
     // 친구 모드에서는 상대 친구가 직접 질문을 소리 내어 읽으므로 자동 음성 생략.
-    if (!isFriend && gameMode !== 'qna' && cell.say !== 'q') {
+    // 그림만 보고 말하기 모드도 질문을 미리 들려주지 않음(🔊 힌트 버튼으로 들을 수 있음).
+    if (!isFriend && !pictureOnly && gameMode !== 'qna' && cell.say !== 'q') {
       setTimeout(() => speakText(cell.question), 500);
     }
   };
@@ -936,7 +1021,7 @@ export default function App() {
     setTimeout(() => {
       setGameState('playing');
       setTurn(other(who));
-    }, 2500);
+    }, pictureOnly ? 4000 : 2500);
   };
 
   // 오답(마이크 오답 또는 친구 ❌ 판정): 3번 시도하면 격려하고 자동으로 다음 차례로 넘김
@@ -951,7 +1036,7 @@ export default function App() {
         setTimeout(() => {
           setGameState('playing');
           setTurn(other(who));
-        }, 2500);
+        }, pictureOnly ? 4000 : 2500);
       } else {
         setFeedback(`다시 한 번 해볼까요? (${next}/3번째 시도)`);
       }
@@ -1088,6 +1173,7 @@ export default function App() {
     setWriteRevealed(false);
     setPracticeTarget(null);
     setPracticeResult(null);
+    setPreviewShown(false);
     setPreviewCell(cell);
 
     if (boardWritingMode && writingCellIds.has(cell.id)) {
@@ -1099,7 +1185,8 @@ export default function App() {
       // 쓰기 모드여도 쓰기 대상 칸이 아니면 평소처럼 듣기/연습 팝업
       setWriteMode(false);
       setBlankSet(null);
-      speakText(`${cell.question} ... ${cell.answer}`);
+      // 그림만 보고 말하기 모드에서는 문장을 미리 들려주지 않음
+      if (!pictureOnly) speakText(`${cell.question} ... ${cell.answer}`);
     }
   };
 
@@ -1237,12 +1324,15 @@ export default function App() {
     fontFamily: "'Comic Sans MS', 'Chalkboard SE', 'Comic Neue', 'NanumSquareRound', 'Nanum Gothic', sans-serif",
   };
 
+  // 말하기 창에서 통과(또는 3번 시도 후 넘어감)가 결정된 상태
+  const taskDone = feedback.includes('Excellent') || feedback.includes('잘했어요');
+
   const unitCount = selectedUnits.length;
   const perUnitCells = Math.floor(CONTENT_SLOTS / Math.max(1, unitCount));
 
   return (
     <div
-      className="min-h-screen bg-gradient-to-b from-sky-300 via-cyan-400 to-blue-600 text-gray-800 p-4 flex flex-col items-center relative overflow-hidden"
+      className={`min-h-screen ${T.page} text-gray-800 p-4 flex flex-col items-center relative overflow-hidden`}
       style={appStyle}
     >
       <style>{`
@@ -1269,6 +1359,15 @@ export default function App() {
           50%       { transform: translateY(-18px) rotate(6deg); }
         }
         .float-emoji { animation: float-emoji 5s ease-in-out infinite; }
+
+        @keyframes season-fall {
+          0%   { transform: translateY(-10vh) translateX(0) rotate(0deg); opacity: 0; }
+          10%  { opacity: 0.9; }
+          50%  { transform: translateY(50vh) translateX(30px) rotate(180deg); }
+          100% { transform: translateY(110vh) translateX(-20px) rotate(360deg); opacity: 0; }
+        }
+        .season-fall { position: absolute; top: 0; animation: season-fall linear infinite; }
+        @media (prefers-reduced-motion: reduce) { .season-fall, .float-emoji { animation: none; } .season-fall { display: none; } }
 
         @keyframes toast-in {
           0% { transform: translate(-50%, -20px) scale(0.8); opacity: 0; }
@@ -1303,14 +1402,34 @@ export default function App() {
         .face-bottom { transform: rotateX(-90deg) translateZ(64px); }
       `}</style>
 
-      {/* 바다·여름 장식 이모지 (배경) */}
+      {/* 계절 장식 이모지 (배경) */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="absolute top-6 left-4 text-5xl md:text-6xl opacity-80 float-emoji">☀️</div>
-        <div className="absolute top-24 right-8 text-4xl md:text-5xl opacity-70 float-emoji" style={{ animationDelay: '1.2s' }}>⛱️</div>
-        <div className="absolute bottom-24 left-10 text-4xl md:text-5xl opacity-70 float-emoji" style={{ animationDelay: '0.6s' }}>🏄</div>
-        <div className="absolute bottom-10 right-12 text-4xl md:text-5xl opacity-70 float-emoji" style={{ animationDelay: '2s' }}>🍉</div>
-        <div className="absolute top-1/2 left-2 text-4xl md:text-5xl opacity-50 float-emoji" style={{ animationDelay: '1.6s' }}>🌊</div>
-        <div className="absolute top-1/3 right-2 text-4xl md:text-5xl opacity-50 float-emoji" style={{ animationDelay: '2.4s' }}>🌊</div>
+        <div className="absolute top-6 left-4 text-5xl md:text-6xl opacity-80 float-emoji">{T.floats[0]}</div>
+        <div className="absolute top-24 right-8 text-4xl md:text-5xl opacity-70 float-emoji" style={{ animationDelay: '1.2s' }}>{T.floats[1]}</div>
+        <div className="absolute bottom-24 left-10 text-4xl md:text-5xl opacity-70 float-emoji" style={{ animationDelay: '0.6s' }}>{T.floats[2]}</div>
+        <div className="absolute bottom-10 right-12 text-4xl md:text-5xl opacity-70 float-emoji" style={{ animationDelay: '2s' }}>{T.floats[3]}</div>
+        <div className="absolute top-1/2 left-2 text-4xl md:text-5xl opacity-50 float-emoji" style={{ animationDelay: '1.6s' }}>{T.floats[4]}</div>
+        <div className="absolute top-1/3 right-2 text-4xl md:text-5xl opacity-50 float-emoji" style={{ animationDelay: '2.4s' }}>{T.floats[5]}</div>
+      </div>
+      {/* 떨어지는 낙엽 / 눈송이 */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-[5]" aria-hidden="true">
+        {FALLING.map((f, i) => (
+          <span
+            key={`${themeKey}-${i}`}
+            className="season-fall select-none"
+            style={{
+              left: `${f.left}%`,
+              fontSize: `${f.size}px`,
+              animationDuration: `${f.dur}s`,
+              animationDelay: `${f.delay}s`,
+              opacity: 0,
+              color: themeKey === 'winter' ? '#ffffff' : undefined,
+              textShadow: themeKey === 'winter' ? '0 0 4px rgba(30,58,138,0.5)' : undefined,
+            }}
+          >
+            {T.falling[i % T.falling.length]}
+          </span>
+        ))}
       </div>
 
       {/* 별 스티커 획득 토스트 */}
@@ -1323,13 +1442,13 @@ export default function App() {
       )}
 
       <header className="w-full max-w-6xl mb-4 z-10 rounded-3xl overflow-hidden shadow-[0_6px_0_0_rgba(0,0,0,0.15)] border-4 border-white/80">
-        {/* 제목 띠 (바다 그라데이션) */}
-        <div className="relative bg-gradient-to-r from-sky-500 via-cyan-500 to-teal-500 px-4 py-4 md:py-5 text-center overflow-hidden">
-          <div className="absolute top-1 left-3 text-2xl md:text-3xl opacity-70 select-none pointer-events-none">🌊</div>
-          <div className="absolute bottom-1 right-3 text-2xl md:text-3xl opacity-70 select-none pointer-events-none">⛱️</div>
-          <h1 className="relative text-xl sm:text-2xl md:text-3xl font-black text-white leading-tight break-keep drop-shadow-[0_2px_0_rgba(2,132,199,0.9)]">
-            🏖️ 6학년 7-9단원 주요표현 보드게임{' '}
-            <span className="text-yellow-200">with Writing</span> 🏄
+        {/* 제목 띠 (계절 그라데이션) */}
+        <div className={`relative ${T.header} px-4 py-4 md:py-5 text-center overflow-hidden`}>
+          <div className="absolute top-1 left-3 text-2xl md:text-3xl opacity-70 select-none pointer-events-none">{T.headerDeco[0]}</div>
+          <div className="absolute bottom-1 right-3 text-2xl md:text-3xl opacity-70 select-none pointer-events-none">{T.headerDeco[1]}</div>
+          <h1 className={`relative text-xl sm:text-2xl md:text-3xl font-black text-white leading-tight break-keep ${T.titleShadow}`}>
+            {T.titleIcons[0]} 6학년 7-9단원 주요표현 보드게임{' '}
+            <span className="text-yellow-200">with Writing</span> {T.titleIcons[1]}
           </h1>
         </div>
 
@@ -1356,6 +1475,30 @@ export default function App() {
               질문&대답 같이
             </button>
           </div>
+
+          <div className="flex bg-gray-200 p-1 rounded-xl shadow-inner">
+            {Object.keys(THEMES).map((k) => (
+              <button
+                key={k}
+                onClick={() => changeTheme(k)}
+                className={`px-3 py-2 rounded-lg font-bold transition-all text-sm md:text-base whitespace-nowrap ${themeKey === k ? 'bg-white shadow-sm text-slate-800 border border-gray-300' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                {THEMES[k].label}
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={() => setPictureOnly((v) => !v)}
+            className={`px-4 py-2 rounded-xl font-bold whitespace-nowrap transition-all border-2 ${
+              pictureOnly
+                ? 'bg-emerald-600 text-white border-emerald-700 shadow-[0_4px_0_0_rgba(4,120,87,1)]'
+                : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border-emerald-300'
+            }`}
+            title="문장을 숨기고 그림만 보고 말해요"
+          >
+            {pictureOnly ? '🖼️ 그림만 보고 말하기 ON' : '🖼️ 그림만 보고 말하기'}
+          </button>
 
           <button
             onClick={toggleBoardWriting}
@@ -1403,8 +1546,8 @@ export default function App() {
       )}
 
       {gameState === 'lobby' && (
-        <div className="w-full max-w-6xl bg-white/95 p-4 md:p-5 rounded-2xl shadow-md mb-4 z-10 border-4 border-cyan-400">
-          <h2 className="text-lg md:text-2xl font-black text-cyan-700 text-center mb-4">
+        <div className={`w-full max-w-6xl bg-white/95 p-4 md:p-5 rounded-2xl shadow-md mb-4 z-10 border-4 ${T.panel}`}>
+          <h2 className={`text-lg md:text-2xl font-black ${T.panelText} text-center mb-4`}>
             💡 그림을 클릭하면 질문과 대답이 나와요. 듣고 · 따라 말하고 · 🎤 녹음하고 · 공책에 써봅시다!
           </h2>
 
@@ -1485,7 +1628,7 @@ export default function App() {
       )}
 
       {gameState === 'playing' && (
-        <div className="w-full max-w-6xl bg-white/95 p-4 rounded-2xl shadow-[0_4px_0_0_rgba(0,0,0,0.2)] mb-4 flex justify-between items-center border-l-8 border-cyan-500 z-10">
+        <div className={`w-full max-w-6xl bg-white/95 p-4 rounded-2xl shadow-[0_4px_0_0_rgba(0,0,0,0.2)] mb-4 flex justify-between items-center border-l-8 ${T.panel} z-10`}>
           <div className="text-xl font-bold w-1/3 flex items-center gap-2">
             {isFriend ? (
               <div className="flex flex-col gap-1">
@@ -1571,14 +1714,14 @@ export default function App() {
       )}
 
       <div
-        className={`w-full max-w-6xl p-6 md:p-12 rounded-[3rem] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.6)] grid gap-3 md:gap-5 relative z-10 border-[14px] border-[#1e5a8a] bg-gradient-to-br from-sky-100 to-cyan-200 overflow-visible ${gameState === 'lobby' ? 'mb-24' : ''}`}
+        className={`w-full max-w-6xl p-6 md:p-12 rounded-[3rem] shadow-[0_30px_60px_-15px_rgba(0,0,0,0.6)] grid gap-3 md:gap-5 relative z-10 border-[14px] ${T.board} overflow-visible ${gameState === 'lobby' ? 'mb-24' : ''}`}
         style={{ gridTemplateColumns: `repeat(${BOARD_COLS}, minmax(0, 1fr))` }}
       >
         {/* 판 모서리 바다 장식 */}
-        <div className="absolute -top-5 -left-4 text-4xl md:text-5xl select-none pointer-events-none rotate-[-12deg] z-20">🐚</div>
-        <div className="absolute -top-5 -right-4 text-4xl md:text-5xl select-none pointer-events-none rotate-[12deg] z-20">⭐</div>
-        <div className="absolute -bottom-5 -left-4 text-4xl md:text-5xl select-none pointer-events-none z-20">🦀</div>
-        <div className="absolute -bottom-5 -right-4 text-4xl md:text-5xl select-none pointer-events-none z-20">🐠</div>
+        <div className="absolute -top-5 -left-4 text-4xl md:text-5xl select-none pointer-events-none rotate-[-12deg] z-20">{T.corners[0]}</div>
+        <div className="absolute -top-5 -right-4 text-4xl md:text-5xl select-none pointer-events-none rotate-[12deg] z-20">{T.corners[1]}</div>
+        <div className="absolute -bottom-5 -left-4 text-4xl md:text-5xl select-none pointer-events-none z-20">{T.corners[2]}</div>
+        <div className="absolute -bottom-5 -right-4 text-4xl md:text-5xl select-none pointer-events-none z-20">{T.corners[3]}</div>
 
         {board.map((cell, idx) => {
           const isPlayerHere = playerPos === idx;
@@ -1622,13 +1765,13 @@ export default function App() {
             >
               {/* 진행 방향 화살표 */}
               {arrow === 'right' && (
-                <div className="absolute top-1/2 -right-3 md:-right-4 -translate-y-1/2 text-sky-700 text-xl md:text-2xl font-black z-20 drop-shadow-sm">▶</div>
+                <div className={`absolute top-1/2 -right-3 md:-right-4 -translate-y-1/2 ${T.arrow} text-xl md:text-2xl font-black z-20 drop-shadow-sm`}>▶</div>
               )}
               {arrow === 'left' && (
-                <div className="absolute top-1/2 -left-3 md:-left-4 -translate-y-1/2 text-sky-700 text-xl md:text-2xl font-black z-20 drop-shadow-sm">◀</div>
+                <div className={`absolute top-1/2 -left-3 md:-left-4 -translate-y-1/2 ${T.arrow} text-xl md:text-2xl font-black z-20 drop-shadow-sm`}>◀</div>
               )}
               {arrow === 'down' && (
-                <div className="absolute left-1/2 -bottom-3 md:-bottom-4 -translate-x-1/2 text-sky-700 text-xl md:text-2xl font-black z-20 drop-shadow-sm">▼</div>
+                <div className={`absolute left-1/2 -bottom-3 md:-bottom-4 -translate-x-1/2 ${T.arrow} text-xl md:text-2xl font-black z-20 drop-shadow-sm`}>▼</div>
               )}
 
               <div className="absolute -top-4 -left-2 md:-top-5 md:-left-3 flex gap-1 z-30 w-full px-1">
@@ -1691,7 +1834,7 @@ export default function App() {
                 </div>
               )}
 
-              <div className="absolute -bottom-2 right-1 md:right-2 w-5 h-5 md:w-7 md:h-7 bg-[#1e5a8a] text-white rounded-full flex items-center justify-center text-[9px] md:text-sm font-black shadow-[0_3px_0_0_rgba(0,0,0,0.3)] border-2 border-white z-20">
+              <div className={`absolute -bottom-2 right-1 md:right-2 w-5 h-5 md:w-7 md:h-7 ${T.badge} text-white rounded-full flex items-center justify-center text-[9px] md:text-sm font-black shadow-[0_3px_0_0_rgba(0,0,0,0.3)] border-2 border-white z-20`}>
                 {idx}
               </div>
             </div>
@@ -1729,7 +1872,7 @@ export default function App() {
               ✕
             </button>
             <h2 className="text-2xl md:text-3xl font-black text-cyan-700 text-center mb-1">📖 활동 방법</h2>
-            <p className="text-center text-sm font-bold text-slate-500 mb-5">🏖️ 이렇게 놀며 공부해요!</p>
+            <p className="text-center text-sm font-bold text-slate-500 mb-5">{T.guide}</p>
 
             <div className="space-y-3 text-left">
               {[
@@ -1739,6 +1882,7 @@ export default function App() {
                 { n: '4', c: 'bg-amber-100 border-amber-300 text-amber-800', t: '정확히 말하고 통과하면 ⭐ 별 스티커를 모아요.' },
                 { n: '5', c: 'bg-violet-100 border-violet-300 text-violet-800', t: "✏️ '쓰기 활동' 버튼을 누르고, ✏️ 쓰기 표시가 있는 칸을 골라 공책에 질문과 대답을 다 적어보세요!" },
                 { n: '6', c: 'bg-rose-100 border-rose-300 text-rose-800', t: "👫 '친구와 하기'를 고르면 2명이 한 기기로 번갈아 해요. 상대 친구가 질문하고, 🎤 마이크나 친구의 ⭕ 판정으로 통과해요!" },
+                { n: '7', c: 'bg-emerald-100 border-emerald-300 text-emerald-800', t: "🖼️ '그림만 보고 말하기'를 켜면 문장이 숨겨져요. 그림만 보고 말한 뒤 정답을 확인해요! (💡 힌트: 첫 글자)" },
               ].map((s) => (
                 <div key={s.n} className={`flex items-start gap-3 p-3 rounded-2xl border-2 ${s.c}`}>
                   <span className="w-8 h-8 shrink-0 rounded-full bg-white border-2 border-current flex items-center justify-center font-black">{s.n}</span>
@@ -1757,7 +1901,7 @@ export default function App() {
               onClick={closeGuide}
               className="mt-5 w-full py-3 bg-cyan-500 hover:bg-cyan-400 text-white rounded-2xl font-black text-xl transition-all border-b-8 border-cyan-700 active:border-b-0 active:translate-y-2"
             >
-              시작할게요! 🏄
+              {T.startBtn}
             </button>
           </div>
         </div>
@@ -1812,9 +1956,13 @@ export default function App() {
                         🔊 질문 듣기
                       </button>
                     </div>
-                    <p className="text-2xl md:text-3xl font-black text-slate-800 leading-snug">
-                      <ClickableWords text={previewCell.question} onWord={(w) => { speakText(w); setWordHint({ word: w, meaning: lookupMeaning(w) }); }} />
-                    </p>
+                    {pictureOnly && !previewShown ? (
+                      <p className="text-2xl md:text-3xl font-black text-slate-300 leading-snug font-mono">{maskHint(previewCell.question)}</p>
+                    ) : (
+                      <p className="text-2xl md:text-3xl font-black text-slate-800 leading-snug">
+                        <ClickableWords text={previewCell.question} onWord={(w) => { speakText(w); setWordHint({ word: w, meaning: lookupMeaning(w) }); }} />
+                      </p>
+                    )}
                   </div>
                   <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4">
                     <div className="flex items-center justify-between gap-2 mb-1">
@@ -1826,11 +1974,27 @@ export default function App() {
                         🔊 대답 듣기
                       </button>
                     </div>
-                    <p className="text-2xl md:text-3xl font-black text-slate-800 leading-snug">
-                      <ClickableWords text={previewCell.answer} onWord={(w) => { speakText(w); setWordHint({ word: w, meaning: lookupMeaning(w) }); }} />
-                    </p>
+                    {pictureOnly && !previewShown ? (
+                      <p className="text-2xl md:text-3xl font-black text-slate-300 leading-snug font-mono">{maskHint(previewCell.answer)}</p>
+                    ) : (
+                      <p className="text-2xl md:text-3xl font-black text-slate-800 leading-snug">
+                        <ClickableWords text={previewCell.answer} onWord={(w) => { speakText(w); setWordHint({ word: w, meaning: lookupMeaning(w) }); }} />
+                      </p>
+                    )}
                   </div>
                 </div>
+
+                {pictureOnly && !previewShown && (
+                  <div className="mt-4">
+                    <p className="text-sm font-bold text-emerald-700 mb-2">🖼️ 그림만 보고 먼저 말해 본 다음 문장을 확인해요!</p>
+                    <button
+                      onClick={() => setPreviewShown(true)}
+                      className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-white rounded-full font-black shadow-[0_4px_0_0_rgba(4,120,87,1)] active:shadow-none active:translate-y-1 transition-all"
+                    >
+                      👀 문장 보기
+                    </button>
+                  </div>
+                )}
 
                 <p className="text-sm font-bold text-slate-500 mt-3">💡 단어를 누르면 그 단어만 들려주고 한글 뜻이 나와요</p>
 
@@ -2232,12 +2396,14 @@ export default function App() {
                   <span className="text-blue-600 border-b-4 border-blue-300">대답</span>을<br />
                   모두 말해보세요!
                 </h3>
-                <button
-                  onClick={() => speakText(`${currentTask.question} ... ${currentTask.answer}`)}
-                  className="mt-4 text-sm text-blue-600 bg-white border border-blue-200 hover:bg-blue-100 px-4 py-2 rounded-full transition-colors font-bold shadow-sm"
-                >
-                  🔊 들어보며 연습하기
-                </button>
+                {!pictureOnly && (
+                  <button
+                    onClick={() => speakText(`${currentTask.question} ... ${currentTask.answer}`)}
+                    className="mt-4 text-sm text-blue-600 bg-white border border-blue-200 hover:bg-blue-100 px-4 py-2 rounded-full transition-colors font-bold shadow-sm"
+                  >
+                    🔊 들어보며 연습하기
+                  </button>
+                )}
               </div>
             ) : (
               <div className="mb-6 bg-blue-50 p-6 rounded-3xl border-2 border-blue-100 relative">
@@ -2260,17 +2426,29 @@ export default function App() {
                   </>
                 ) : (
                   <>
-                    <p className="text-blue-500 font-bold mb-2 uppercase tracking-wide">
-                      {isFriend
-                        ? `🗣️ ${labelOf(other(currentTask.who))}이(가) 소리 내어 질문해요:`
-                        : '🤖 AI 친구의 질문:'}
-                    </p>
-                    <h3 className="text-3xl font-black text-slate-800">"{currentTask.question}"</h3>
+                    {pictureOnly && !taskDone ? (
+                      <>
+                        <p className="text-emerald-600 font-bold mb-2 tracking-wide">
+                          🖼️ 그림만 보고 말하기
+                          {isFriend && ` · ${labelOf(other(currentTask.who))}이(가) 그림을 보고 질문해요`}
+                        </p>
+                        <h3 className="text-3xl font-black text-slate-400 tracking-widest">❓ ❓ ❓</h3>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-blue-500 font-bold mb-2 uppercase tracking-wide">
+                          {isFriend
+                            ? `🗣️ ${labelOf(other(currentTask.who))}이(가) 소리 내어 질문해요:`
+                            : '🤖 AI 친구의 질문:'}
+                        </p>
+                        <h3 className="text-3xl font-black text-slate-800">"{currentTask.question}"</h3>
+                      </>
+                    )}
                     <button
                       onClick={() => speakText(currentTask.question)}
                       className="mt-4 text-sm text-blue-600 bg-white border border-blue-200 hover:bg-blue-100 px-4 py-2 rounded-full transition-colors font-bold shadow-sm"
                     >
-                      🔊 질문 다시 듣기
+                      {pictureOnly ? '🔊 질문 듣기 (힌트)' : '🔊 질문 다시 듣기'}
                     </button>
                   </>
                 )}
@@ -2297,13 +2475,38 @@ export default function App() {
               {isListening && <p className="text-red-500 font-bold mt-6 animate-pulse">듣고 있어요... 🗣️</p>}
 
               <div className="mt-5 flex justify-center">
-                <button
-                  onClick={() => speakText(currentTask.cell.say === 'q' ? currentTask.question : currentTask.answer)}
-                  className="text-sm text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 px-4 py-2 rounded-full transition-colors font-bold shadow-sm"
-                >
-                  🔊 정답 미리 듣기
-                </button>
+                {pictureOnly ? (
+                  <button
+                    onClick={() => setShowHint((v) => !v)}
+                    disabled={taskDone}
+                    className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 px-4 py-2 rounded-full transition-colors font-bold shadow-sm disabled:opacity-50"
+                  >
+                    {showHint ? '🙈 힌트 숨기기' : '💡 힌트 보기 (첫 글자)'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => speakText(currentTask.cell.say === 'q' ? currentTask.question : currentTask.answer)}
+                    className="text-sm text-amber-700 bg-amber-50 border border-amber-200 hover:bg-amber-100 px-4 py-2 rounded-full transition-colors font-bold shadow-sm"
+                  >
+                    🔊 정답 미리 듣기
+                  </button>
+                )}
               </div>
+
+              {pictureOnly && showHint && !taskDone && (
+                <div className="mt-3 bg-emerald-50 border-2 border-dashed border-emerald-300 rounded-xl px-3 py-2 text-lg font-black text-emerald-800 tracking-wide font-mono">
+                  {currentTask.mode === 'qna' && <span className="block text-base text-emerald-600">{maskHint(currentTask.question)}</span>}
+                  {maskHint(currentTask.cell.say === 'q' ? currentTask.question : currentTask.answer)}
+                </div>
+              )}
+
+              {pictureOnly && taskDone && (
+                <div className="mt-4 bg-green-50 border-2 border-green-300 rounded-xl px-3 py-3 text-left">
+                  <p className="text-xs font-black text-green-600 mb-1">✅ 정답 문장</p>
+                  <p className="text-base font-bold text-slate-600">Q. {currentTask.question}</p>
+                  <p className="text-lg font-black text-slate-800">A. {currentTask.answer}</p>
+                </div>
+              )}
 
               {isFriend && (
                 <div className="mt-5 bg-amber-50 border-2 border-amber-200 rounded-2xl p-4">
