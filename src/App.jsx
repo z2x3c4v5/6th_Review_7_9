@@ -415,6 +415,21 @@ export default function App() {
   const [turn, setTurn] = useState('player');
   const [gameMode, setGameMode] = useState('answerOnly');
 
+  // 대전 상대: 'ai'(AI와 하기) | 'friend'(친구와 하기, 한 기기에서 2명이 번갈아)
+  //  · 친구 모드에서는 내부 슬롯 'player' = 친구1, 'ai' = 친구2 로 재사용한다.
+  const [opponent, setOpponent] = useState('ai');
+  const [names, setNames] = useState({ player: '', ai: '' });
+  const [gameStars, setGameStars] = useState({ player: 0, ai: 0 }); // 친구 모드: 이번 판에서 모은 별
+  const [showFriendAnswer, setShowFriendAnswer] = useState(false); // 친구 판정용 정답 보기
+  const isFriend = opponent === 'friend';
+  const other = (who) => (who === 'player' ? 'ai' : 'player');
+  const nameOf = (who) => {
+    if (isFriend) return (names[who] || '').trim() || (who === 'player' ? '친구 1' : '친구 2');
+    return who === 'player' ? '나' : 'AI';
+  };
+  const iconOf = (who) => (isFriend ? (who === 'player' ? '🐬' : '🐢') : who === 'player' ? '👦' : '🤖');
+  const labelOf = (who) => `${iconOf(who)} ${nameOf(who)}`;
+
   const [rpsState, setRpsState] = useState('idle');
   const [playerChoice, setPlayerChoice] = useState(null);
   const [aiChoice, setAiChoice] = useState(null);
@@ -582,13 +597,13 @@ export default function App() {
 
   // AI 턴 자동 실행
   useEffect(() => {
-    if (gameState === 'playing' && turn === 'ai' && !actionPopup && !catchEvent) {
+    if (opponent === 'ai' && gameState === 'playing' && turn === 'ai' && !actionPopup && !catchEvent) {
       const timer = setTimeout(() => {
         executeAiTurn();
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [gameState, turn, actionPopup, catchEvent]);
+  }, [gameState, turn, actionPopup, catchEvent, opponent]);
 
   const rollDice = () => Math.floor(Math.random() * 6) + 1;
 
@@ -633,7 +648,11 @@ export default function App() {
 
     setTimeout(() => {
       setIsRollingDice(false);
-      setDiceResult(`🎲 ${who === 'player' ? '나온 숫자' : 'AI 숫자'}: ${finalDice}`);
+      setDiceResult(
+        isFriend
+          ? `🎲 ${labelOf(who)}: ${finalDice}`
+          : `🎲 ${who === 'player' ? '나온 숫자' : 'AI 숫자'}: ${finalDice}`,
+      );
 
       setTimeout(() => {
         setShowDicePopup(false);
@@ -656,6 +675,26 @@ export default function App() {
     const dice = rollDice();
     const newPos = Math.min(playerPos + dice, board.length - 1);
     startDiceRoll('player', dice, newPos);
+  };
+
+  // 친구 모드: 현재 차례(turn)인 친구가 주사위를 굴린다
+  const handleFriendTurn = () => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance(''));
+    }
+    const who = turn;
+    const rest = who === 'player' ? playerRest : aiRest;
+    if (rest) {
+      if (who === 'player') setPlayerRest(false);
+      else setAiRest(false);
+      setDiceResult(`${labelOf(who)} 쉬는 턴 💤`);
+      setTurn(other(who));
+      return;
+    }
+    setIsMoving(true);
+    const dice = rollDice();
+    const from = who === 'player' ? playerPos : aiPos;
+    startDiceRoll(who, dice, Math.min(from + dice, board.length - 1));
   };
 
   const executeAiTurn = () => {
@@ -708,8 +747,8 @@ export default function App() {
     }
 
     setIsMoving(false);
-    if (who === 'player') {
-      startSpeakingTask(cell);
+    if (who === 'player' || isFriend) {
+      startSpeakingTask(cell, who);
     } else {
       startAiSpeakingTask(cell);
     }
@@ -739,6 +778,15 @@ export default function App() {
     const { action, who } = actionPopup;
     const isMe = who === 'player';
 
+    if (isFriend) {
+      const n = labelOf(who);
+      if (action === 'forward2')
+        return { title: `우와, ${nameOf(who)} 신난다! 🚀`, desc: `${n}, 앞으로 2칸 더 전진!`, color: 'text-green-600 bg-green-50 border-green-400' };
+      if (action === 'back2')
+        return { title: `앗, ${nameOf(who)} 미끄러졌어요! 🍌`, desc: `${n}, 뒤로 2칸 돌아갑니다 ㅠㅠ`, color: 'text-red-500 bg-red-50 border-red-400' };
+      return { title: `${nameOf(who)}, 조금 쉬어갈까요? 💤`, desc: `${n}, 다음 차례에 한 번 쉽니다.`, color: 'text-blue-500 bg-blue-50 border-blue-400' };
+    }
+
     if (action === 'forward2') {
       return {
         title: isMe ? '우와 신난다! 🚀' : '앗, AI가 빨라요! 🚀',
@@ -760,22 +808,25 @@ export default function App() {
     }
   };
 
-  const startSpeakingTask = (cell) => {
+  const startSpeakingTask = (cell, who = 'player') => {
     setGameState('speaking');
     setSpokenText('');
     setFeedback('');
     setAttemptCount(0);
+    setShowFriendAnswer(false);
 
     setCurrentTask({
       cell,
       question: cell.question,
       answer: cell.answer,
       mode: gameMode,
+      who, // 말하는 사람(친구 모드에서 차례를 넘길 때 사용)
     });
 
     // qna 모드는 학생이 스스로 질문/대답을 만들어야 하므로 자동 음성을 재생하지 않음.
     // say:'q'(학생이 question을 말해야 하는 표현)도 정답을 미리 들려주지 않도록 자동 음성 생략.
-    if (gameMode !== 'qna' && cell.say !== 'q') {
+    // 친구 모드에서는 상대 친구가 직접 질문을 소리 내어 읽으므로 자동 음성 생략.
+    if (!isFriend && gameMode !== 'qna' && cell.say !== 'q') {
       setTimeout(() => speakText(cell.question), 500);
     }
   };
@@ -862,17 +913,36 @@ export default function App() {
     const isCorrect = required.length > 0 && matchAggregate(list, required);
 
     if (isCorrect) {
-      awardStar(task.cell); // ⭐ 정확히 말하고 통과하면 별 획득
-      setFeedback('Excellent! 정답입니다! 🎉 ⭐ (AI 턴으로 넘어갑니다)');
-      speakText('Excellent!');
-      setTimeout(() => {
-        setGameState('playing');
-        setTurn('ai');
-      }, 2500);
+      passTask(task, '🎤');
       return;
     }
+    failTask(task);
+  };
 
-    // 오답: 3번 시도하면 격려하고 자동으로 다음 차례로 넘김
+  // 말하기 통과(마이크 정답 또는 친구 ⭕ 판정) → 별 획득 후 다음 차례로
+  const passTask = (task, by = '🎤') => {
+    if (!task) return;
+    const who = task.who || 'player';
+    if (isFriend) {
+      setGameStars((g) => ({ ...g, [who]: g[who] + 1 }));
+      setFeedback(
+        `Excellent! 정답입니다! 🎉 ⭐ ${by === '⭕' ? '(친구 판정 ⭕) ' : ''}→ 다음은 ${labelOf(other(who))} 차례!`,
+      );
+    } else {
+      awardStar(task.cell); // ⭐ 정확히 말하고 통과하면 별 획득
+      setFeedback('Excellent! 정답입니다! 🎉 ⭐ (AI 턴으로 넘어갑니다)');
+    }
+    speakText('Excellent!');
+    setTimeout(() => {
+      setGameState('playing');
+      setTurn(other(who));
+    }, 2500);
+  };
+
+  // 오답(마이크 오답 또는 친구 ❌ 판정): 3번 시도하면 격려하고 자동으로 다음 차례로 넘김
+  const failTask = (task) => {
+    if (!task) return;
+    const who = task.who || 'player';
     setAttemptCount((c) => {
       const next = c + 1;
       if (next >= 3) {
@@ -880,7 +950,7 @@ export default function App() {
         speakText('Great job!');
         setTimeout(() => {
           setGameState('playing');
-          setTurn('ai');
+          setTurn(other(who));
         }, 2500);
       } else {
         setFeedback(`다시 한 번 해볼까요? (${next}/3번째 시도)`);
@@ -927,7 +997,7 @@ export default function App() {
 
   const skipSpeaking = () => {
     setGameState('playing');
-    setTurn('ai');
+    setTurn(other(currentTask?.who || 'player'));
   };
 
   const stopPreviewRec = () => {
@@ -1082,6 +1152,8 @@ export default function App() {
     setBoardWritingMode(false);
     setWritingCellIds(new Set());
     setAttemptCount(0);
+    setGameStars({ player: 0, ai: 0 });
+    setShowFriendAnswer(false);
   };
 
   const toggleBoardWriting = () => {
@@ -1337,6 +1409,52 @@ export default function App() {
           </h2>
 
           <p className="text-center text-sm md:text-base font-black text-slate-600 mb-2">
+            👥 누구와 할까요?
+          </p>
+          <div className="flex flex-wrap justify-center gap-2 md:gap-3 mb-3">
+            {[
+              { key: 'ai', label: '🤖 AI와 하기' },
+              { key: 'friend', label: '👫 친구와 하기 (2명)' },
+            ].map((o) => (
+              <button
+                key={o.key}
+                onClick={() => setOpponent(o.key)}
+                className={`px-5 py-2 rounded-full font-black text-sm md:text-base border-2 transition-all shadow-[0_3px_0_0_rgba(0,0,0,0.15)] active:translate-y-0.5 active:shadow-none ${
+                  opponent === o.key
+                    ? 'bg-sky-500 border-sky-600 text-white'
+                    : 'bg-white text-slate-400 border-slate-300 opacity-70'
+                }`}
+              >
+                {opponent === o.key ? '✅ ' : ''}{o.label}
+              </button>
+            ))}
+          </div>
+          {isFriend && (
+            <div className="flex flex-wrap justify-center items-center gap-3 mb-4">
+              {['player', 'ai'].map((w, i) => (
+                <label
+                  key={w}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-2xl border-2 font-black ${
+                    w === 'player' ? 'bg-blue-50 border-blue-300 text-blue-800' : 'bg-orange-50 border-orange-300 text-orange-800'
+                  }`}
+                >
+                  <span className="text-2xl">{iconOf(w)}</span>
+                  <input
+                    value={names[w]}
+                    maxLength={8}
+                    onChange={(e) => setNames((n) => ({ ...n, [w]: e.target.value }))}
+                    placeholder={`친구 ${i + 1} 이름`}
+                    className="w-28 md:w-32 px-2 py-1 rounded-lg border border-slate-300 bg-white text-slate-800 text-base font-bold focus:outline-none focus:ring-2 focus:ring-sky-400"
+                  />
+                </label>
+              ))}
+              <p className="w-full text-center text-xs md:text-sm font-bold text-slate-500">
+                한 기기를 함께 써요. 내 차례엔 상대 친구가 질문하고, 나는 대답해요! (🎤 마이크 또는 친구가 ⭕ 판정)
+              </p>
+            </div>
+          )}
+
+          <p className="text-center text-sm md:text-base font-black text-slate-600 mb-2">
             🎯 복습할 단원을 골라보세요 (켠 단원으로만 보드가 만들어져요)
           </p>
           <div className="flex flex-wrap justify-center gap-2 md:gap-3 mb-3">
@@ -1369,7 +1487,20 @@ export default function App() {
       {gameState === 'playing' && (
         <div className="w-full max-w-6xl bg-white/95 p-4 rounded-2xl shadow-[0_4px_0_0_rgba(0,0,0,0.2)] mb-4 flex justify-between items-center border-l-8 border-cyan-500 z-10">
           <div className="text-xl font-bold w-1/3 flex items-center gap-2">
-            {turn === 'player' ? (
+            {isFriend ? (
+              <div className="flex flex-col gap-1">
+                <span
+                  className={`px-3 py-1 rounded-lg border-2 shadow-sm flex items-center gap-2 animate-pulse ${
+                    turn === 'player' ? 'bg-blue-100 text-blue-800 border-blue-300' : 'bg-orange-100 text-orange-800 border-orange-300'
+                  }`}
+                >
+                  {labelOf(turn)} 차례
+                </span>
+                <span className="text-xs md:text-sm font-black text-amber-700 whitespace-nowrap">
+                  ⭐ {iconOf('player')} {gameStars.player} : {gameStars.ai} {iconOf('ai')}
+                </span>
+              </div>
+            ) : turn === 'player' ? (
               <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-lg border-2 border-blue-300 shadow-sm flex items-center gap-2">
                 👦 내 차례
               </span>
@@ -1389,6 +1520,27 @@ export default function App() {
           </div>
 
           <div className="w-1/3 flex justify-end relative">
+            {isFriend ? (
+              <button
+                onClick={handleFriendTurn}
+                disabled={isMoving || showDicePopup || !!actionPopup || !!catchEvent}
+                className={`px-6 md:px-8 py-3 rounded-2xl font-black text-white text-base md:text-lg transition-all
+                  ${
+                    isMoving || showDicePopup || actionPopup || catchEvent
+                      ? 'bg-gray-400 border-2 border-gray-500 shadow-[0_5px_0_0_rgba(107,114,128,1)] cursor-not-allowed opacity-80'
+                      : (turn === 'player' ? playerRest : aiRest)
+                        ? 'bg-purple-500 hover:bg-purple-400 border-2 border-purple-600 shadow-[0_5px_0_0_rgba(147,51,234,1)] active:shadow-none active:translate-y-1 animate-pulse'
+                        : 'bg-amber-500 hover:bg-amber-400 border-2 border-amber-600 shadow-[0_5px_0_0_rgba(180,83,9,1)] active:shadow-none active:translate-y-1'
+                  }`}
+              >
+                {isMoving || showDicePopup || actionPopup || catchEvent
+                  ? '기다려주세요...'
+                  : (turn === 'player' ? playerRest : aiRest)
+                    ? `${iconOf(turn)} 한 번 쉬기 💤`
+                    : `${iconOf(turn)} ${nameOf(turn)} 주사위 굴리기`}
+              </button>
+            ) : (
+            <>
             {turn === 'player' && !isMoving && !showDicePopup && !actionPopup && !catchEvent && !playerRest && (
               <div className="absolute -top-10 right-0 md:-top-12 whitespace-nowrap text-xs md:text-sm font-bold text-amber-700 animate-bounce bg-amber-100 px-3 py-1 rounded-full border border-amber-300 shadow-sm z-20">
                 내가 주사위 굴리기 버튼을 눌러서 시작해봅시다! 👇
@@ -1412,6 +1564,8 @@ export default function App() {
                   ? '기다려주세요...'
                   : '주사위 굴리기'}
             </button>
+            </>
+            )}
           </div>
         </div>
       )}
@@ -1480,12 +1634,12 @@ export default function App() {
               <div className="absolute -top-4 -left-2 md:-top-5 md:-left-3 flex gap-1 z-30 w-full px-1">
                 {isPlayerHere && (
                   <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-br from-blue-400 to-blue-700 rounded-full border-[3px] border-white shadow-[0_6px_8px_rgba(0,0,0,0.5),inset_0_4px_4px_rgba(255,255,255,0.4)] flex items-center justify-center text-xl md:text-2xl animate-bounce z-40">
-                    👦
+                    {iconOf('player')}
                   </div>
                 )}
                 {isAiHere && (
                   <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-br from-red-400 to-red-700 rounded-full border-[3px] border-white shadow-[0_6px_8px_rgba(0,0,0,0.5),inset_0_4px_4px_rgba(255,255,255,0.4)] flex items-center justify-center text-xl md:text-2xl transition-transform duration-300 z-30">
-                    🤖
+                    {iconOf('ai')}
                   </div>
                 )}
               </div>
@@ -1584,6 +1738,7 @@ export default function App() {
                 { n: '3', c: 'bg-teal-100 border-teal-300 text-teal-800', t: '게임 시작! 주사위를 굴려 도착한 칸의 문장을 말해요.' },
                 { n: '4', c: 'bg-amber-100 border-amber-300 text-amber-800', t: '정확히 말하고 통과하면 ⭐ 별 스티커를 모아요.' },
                 { n: '5', c: 'bg-violet-100 border-violet-300 text-violet-800', t: "✏️ '쓰기 활동' 버튼을 누르고, ✏️ 쓰기 표시가 있는 칸을 골라 공책에 질문과 대답을 다 적어보세요!" },
+                { n: '6', c: 'bg-rose-100 border-rose-300 text-rose-800', t: "👫 '친구와 하기'를 고르면 2명이 한 기기로 번갈아 해요. 상대 친구가 질문하고, 🎤 마이크나 친구의 ⭕ 판정으로 통과해요!" },
               ].map((s) => (
                 <div key={s.n} className={`flex items-start gap-3 p-3 rounded-2xl border-2 ${s.c}`}>
                   <span className="w-8 h-8 shrink-0 rounded-full bg-white border-2 border-current flex items-center justify-center font-black">{s.n}</span>
@@ -1863,14 +2018,16 @@ export default function App() {
       {catchEvent && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[70] p-4 backdrop-blur-sm animate-[fadeIn_0.3s_ease-out]">
           <div className="bg-white rounded-[2rem] p-10 max-w-md w-full text-center shadow-2xl border-8 border-orange-400 transform transition-all scale-100">
-            <div className="text-7xl mb-6 animate-bounce">{catchEvent.victim === 'ai' ? '😆' : '😱'}</div>
+            <div className="text-7xl mb-6 animate-bounce">{isFriend ? '😆' : catchEvent.victim === 'ai' ? '😆' : '😱'}</div>
             <h2 className="text-3xl font-black mb-4 drop-shadow-sm text-orange-600">
-              {catchEvent.victim === 'ai' ? '잡았다!' : '앗, 잡혔다!'}
+              {isFriend ? `${nameOf(catchEvent.who)}, 잡았다!` : catchEvent.victim === 'ai' ? '잡았다!' : '앗, 잡혔다!'}
             </h2>
             <p className="text-xl font-bold text-gray-700 mb-8 whitespace-pre-line">
-              {catchEvent.victim === 'ai'
-                ? '내가 AI를 잡았어요!\nAI는 출발선으로 돌아갑니다.'
-                : 'AI에게 잡히고 말았어요!\n출발선으로 돌아갑니다.'}
+              {isFriend
+                ? `${labelOf(catchEvent.who)}이(가) ${labelOf(catchEvent.victim)}을(를) 잡았어요!\n${nameOf(catchEvent.victim)}은(는) 출발선으로 돌아갑니다.`
+                : catchEvent.victim === 'ai'
+                  ? '내가 AI를 잡았어요!\nAI는 출발선으로 돌아갑니다.'
+                  : 'AI에게 잡히고 말았어요!\n출발선으로 돌아갑니다.'}
             </p>
             <button
               onClick={handleCatchClose}
@@ -1919,7 +2076,35 @@ export default function App() {
             <div className="absolute -top-10 -right-10 w-32 h-32 bg-yellow-300 rounded-full mix-blend-multiply filter blur-xl opacity-70"></div>
             <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-pink-300 rounded-full mix-blend-multiply filter blur-xl opacity-70"></div>
 
-            {rpsState === 'idle' && (
+            {isFriend && (
+              <div className="relative z-10">
+                <h2 className="text-3xl font-black mb-4 text-cyan-800">누가 먼저 할까요?</h2>
+                <p className="text-cyan-600 font-bold mb-8">
+                  두 친구가 직접 가위바위보! ✌️✊🖐️
+                  <br />
+                  이긴 친구를 눌러주세요.
+                </p>
+                <div className="flex justify-center gap-4">
+                  {['player', 'ai'].map((w) => (
+                    <button
+                      key={w}
+                      onClick={() => {
+                        setTurn(w);
+                        setGameState('playing');
+                      }}
+                      className={`flex-1 py-5 rounded-2xl font-black text-xl border-4 shadow-[0_6px_0_0_rgba(0,0,0,0.15)] active:shadow-none active:translate-y-1 transition-all ${
+                        w === 'player' ? 'bg-blue-50 border-blue-300 text-blue-800 hover:bg-blue-100' : 'bg-orange-50 border-orange-300 text-orange-800 hover:bg-orange-100'
+                      }`}
+                    >
+                      <div className="text-5xl mb-2">{iconOf(w)}</div>
+                      {nameOf(w)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {!isFriend && rpsState === 'idle' && (
               <div className="relative z-10">
                 <h2 className="text-3xl font-black mb-4 text-cyan-800">누가 먼저 할까요?</h2>
                 <p className="text-cyan-600 font-bold mb-8">가위바위보로 먼저 시작할 사람을 정해요!</p>
@@ -1946,7 +2131,7 @@ export default function App() {
               </div>
             )}
 
-            {(rpsState === 'animating' || rpsState === 'result') && (
+            {!isFriend && (rpsState === 'animating' || rpsState === 'result') && (
               <div className="flex flex-col items-center relative z-10">
                 <h2 className="text-3xl font-black mb-8 text-amber-500 animate-pulse">가위~ 바위~ 보!</h2>
 
@@ -1985,7 +2170,7 @@ export default function App() {
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4 backdrop-blur-sm">
           <div className="bg-white rounded-[2rem] p-10 max-w-sm w-full text-center shadow-2xl border-8 border-amber-400 transform transition-all scale-110">
             <h2 className="text-3xl font-black mb-12 text-amber-600 drop-shadow-sm">
-              {turn === 'player' ? '👦 내 차례!' : '🤖 AI 차례!'}
+              {isFriend ? `${labelOf(turn)} 차례!` : turn === 'player' ? '👦 내 차례!' : '🤖 AI 차례!'}
             </h2>
 
             <div className="w-32 h-32 relative perspective-1000 mb-12 mx-auto">
@@ -2018,7 +2203,16 @@ export default function App() {
 
       {gameState === 'speaking' && currentTask && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-[2rem] p-6 md:p-10 max-w-lg w-full text-center shadow-2xl border-8 border-blue-400">
+          <div className="bg-white rounded-[2rem] p-6 md:p-10 max-w-lg w-full text-center shadow-2xl border-8 border-blue-400 max-h-[95vh] overflow-y-auto">
+            {isFriend && (
+              <div
+                className={`mb-4 inline-block px-4 py-1.5 rounded-full font-black text-lg border-2 ${
+                  currentTask.who === 'player' ? 'bg-blue-100 text-blue-800 border-blue-300' : 'bg-orange-100 text-orange-800 border-orange-300'
+                }`}
+              >
+                {labelOf(currentTask.who)} 대답 차례!
+              </div>
+            )}
             {currentTask.mode === 'qna' ? (
               <div className="mb-6 bg-blue-50 p-6 rounded-3xl border-2 border-blue-100 relative">
                 <div className="flex justify-center items-center gap-4 mb-4">
@@ -2066,7 +2260,11 @@ export default function App() {
                   </>
                 ) : (
                   <>
-                    <p className="text-blue-500 font-bold mb-2 uppercase tracking-wide">🤖 AI 친구의 질문:</p>
+                    <p className="text-blue-500 font-bold mb-2 uppercase tracking-wide">
+                      {isFriend
+                        ? `🗣️ ${labelOf(other(currentTask.who))}이(가) 소리 내어 질문해요:`
+                        : '🤖 AI 친구의 질문:'}
+                    </p>
                     <h3 className="text-3xl font-black text-slate-800">"{currentTask.question}"</h3>
                     <button
                       onClick={() => speakText(currentTask.question)}
@@ -2106,6 +2304,45 @@ export default function App() {
                   🔊 정답 미리 듣기
                 </button>
               </div>
+
+              {isFriend && (
+                <div className="mt-5 bg-amber-50 border-2 border-amber-200 rounded-2xl p-4">
+                  <p className="font-black text-amber-800 mb-3">
+                    👂 {labelOf(other(currentTask.who))}이(가) 듣고 판정해요
+                    <span className="block text-xs font-bold text-amber-600 mt-1">
+                      마이크가 잘 안 알아들으면 친구가 ⭕를 눌러 주세요
+                    </span>
+                  </p>
+                  <button
+                    onClick={() => setShowFriendAnswer((v) => !v)}
+                    className="text-sm text-amber-800 bg-white border border-amber-300 hover:bg-amber-100 px-4 py-1.5 rounded-full font-bold shadow-sm mb-3"
+                  >
+                    {showFriendAnswer ? '🙈 정답 숨기기' : '👀 정답 보기 (판정하는 친구용)'}
+                  </button>
+                  {showFriendAnswer && (
+                    <p className="text-lg font-black text-slate-800 bg-white rounded-xl border border-amber-200 px-3 py-2 mb-3">
+                      {currentTask.mode === 'qna' && <span className="block text-slate-500 text-base">{currentTask.question}</span>}
+                      {currentTask.cell.say === 'q' ? currentTask.question : currentTask.answer}
+                    </p>
+                  )}
+                  <div className="flex gap-3 justify-center">
+                    <button
+                      onClick={() => passTask(currentTask, '⭕')}
+                      disabled={isListening || feedback.includes('Excellent') || feedback.includes('잘했어요')}
+                      className="flex-1 py-3 rounded-2xl font-black text-xl text-white bg-green-500 hover:bg-green-400 border-b-4 border-green-700 active:border-b-0 active:translate-y-1 disabled:opacity-50"
+                    >
+                      ⭕ 맞았어요
+                    </button>
+                    <button
+                      onClick={() => failTask(currentTask)}
+                      disabled={isListening || feedback.includes('Excellent') || feedback.includes('잘했어요')}
+                      className="flex-1 py-3 rounded-2xl font-black text-xl text-white bg-rose-500 hover:bg-rose-400 border-b-4 border-rose-700 active:border-b-0 active:translate-y-1 disabled:opacity-50"
+                    >
+                      ❌ 다시 해봐
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {feedback && (
                 <div
@@ -2166,8 +2403,15 @@ export default function App() {
           <div className="bg-white rounded-[2rem] p-10 max-w-md w-full text-center shadow-2xl border-8 border-amber-400">
             <div className="text-8xl mb-6 animate-bounce">🏆</div>
             <h2 className="text-4xl font-black mb-2 text-transparent bg-clip-text bg-gradient-to-r from-cyan-500 to-blue-500">
-              {playerPos >= board.length - 1 ? '나의 승리!' : 'AI의 승리!'}
+              {isFriend
+                ? `${labelOf(playerPos >= board.length - 1 ? 'player' : 'ai')} 승리!`
+                : playerPos >= board.length - 1 ? '나의 승리!' : 'AI의 승리!'}
             </h2>
+            {isFriend && (
+              <p className="text-xl font-black text-amber-700 mt-3">
+                ⭐ 모은 별 — {labelOf('player')} {gameStars.player}개 · {labelOf('ai')} {gameStars.ai}개
+              </p>
+            )}
             <p className="text-lg font-bold text-slate-500 mb-8">정말 멋진 게임이었어요!</p>
             <button
               onClick={resetGame}
